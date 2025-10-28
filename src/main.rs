@@ -1,4 +1,3 @@
-
 const OPEN_OBJECT: &str = "{";
 const CLOSE_OBJECT: &str = "}";
 const OPEN_ARRAY: &str = "[";
@@ -11,7 +10,7 @@ const NULL: &str = "null";
 const COLON: &str = ":";
 const COMMA: &str = ",";
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum TokenType {
     OpenObject,
     CloseObject,
@@ -27,7 +26,9 @@ enum TokenType {
 }
 
 fn main() {
-    let mut lex1 = Lexer::new(r#"{"aa1  23wd2": 123, "b": [true, false, null], "c": { "c1": 100, "c2": false }"}"#);
+    let mut lex1 = Lexer::new(
+        r#"{"aa1  23wd2": 123, "b": [true, false, null], "c": { "c1": 100, "c2": false }"}"#,
+    );
     lex1.generate();
     println!("{:#?}", lex1.token_list);
 }
@@ -117,7 +118,7 @@ impl Lexer {
                 }
             }
         }
-        self.position = 0; 
+        self.position = 0;
     }
 
     fn generate_string(&mut self) -> Token {
@@ -176,9 +177,19 @@ impl Lexer {
     }
 }
 
+type ObjectNode = Vec<(String, ASTNode)>;
+
+type ArrayNode = Vec<ASTNode>;
+
 #[derive(Debug)]
-struct ASTNode {
-    trees: Vec<ASTNode>,
+enum ASTNode {
+    Object(ObjectNode),
+    Array(ArrayNode),
+    String(String),
+    Number(f64),
+    True,
+    False,
+    Null,
 }
 
 #[derive(Debug)]
@@ -197,22 +208,92 @@ impl Parser {
         }
     }
 
-    fn parse(&mut self) {
-        while self.position < self.tokens.len() {
-            let token = &self.tokens[self.position];
-            match token.token_type {
-                TokenType::String => {
-                    // Handle string value
-                }
-                TokenType::Number => {
-                    // Handle number value
-                }
-                TokenType::True | TokenType::False | TokenType::Null => {
-                    // Handle literal values
-                }
-                _ => {}
+    fn parse(&mut self) -> ASTNode {
+        let token = &self.tokens[self.position];
+        match token.token_type {
+            TokenType::OpenObject => {
+                return ASTNode::Object(self.parse_object());
             }
-            self.position += 1;
+            TokenType::OpenArray => {
+                return ASTNode::Array(self.parse_array());
+            }
+            TokenType::True
+            | TokenType::False
+            | TokenType::Null
+            | TokenType::Number
+            | TokenType::String => {
+                return match token.token_type {
+                    TokenType::True => ASTNode::True,
+                    TokenType::False => ASTNode::False,
+                    TokenType::Null => ASTNode::Null,
+                    TokenType::Number => ASTNode::Number(token.value.parse().unwrap()),
+                    TokenType::String => ASTNode::String(token.value.clone()),
+                    _ => unreachable!(),
+                };
+            }
+            TokenType::CloseArray
+            | TokenType::CloseObject
+            | TokenType::Colon
+            | TokenType::Comma => {
+                panic!("Unexpected token: {:?}", token);
+            }
+        };
+    }
+
+    fn parse_object(&mut self) -> ObjectNode {
+        let mut properties: ObjectNode = vec![];
+        self.position += 1; // Skip OPEN_OBJECT
+        loop {
+            let current_token = &self.tokens[self.position];
+            match current_token.token_type {
+                TokenType::CloseObject => {
+                    break;
+                }
+                TokenType::String => {
+                    let key = current_token.value.clone();
+                    self.position += 1; // Move to COLON
+                    if self.tokens[self.position].token_type != TokenType::Colon {
+                        panic!("Expected COLON after key in object");
+                    }
+                    self.position += 1; // Move to value
+                    let value = self.parse();
+                    properties.push((key, value));
+                    self.position += 1; // Move to next token
+                    let next_token = &self.tokens[self.position];
+                    if next_token.token_type != TokenType::Comma {
+                        panic!("Expected COMMA or CLOSE_OBJECT after value in object");
+                    }
+                    self.position += 1; // Move to next key or CLOSE_OBJECT
+                }
+                _ => panic!("Unexpected token in object: {:?}", current_token),
+            }
         }
+        self.position += 1; // Skip CLOSE_OBJECT
+        return properties;
+    }
+
+    fn parse_array(&mut self) -> ArrayNode {
+        let mut elements: ArrayNode = vec![];
+        self.position += 1; // Skip OPEN_ARRAY
+        loop {
+            let current_token = &self.tokens[self.position];
+            match current_token.token_type {
+                TokenType::CloseArray => {
+                    break;
+                }
+                _ => {
+                    let element = self.parse();
+                    elements.push(element);
+                    self.position += 1; // Move to next token
+                    let next_token = &self.tokens[self.position];
+                    if next_token.token_type != TokenType::Comma {
+                        panic!("Expected COMMA or CLOSE_ARRAY after element in array");
+                    }
+                    self.position += 1; // Move to next element or CLOSE_ARRAY
+                }
+            }
+        }
+        self.position += 1; // Skip CLOSE_ARRAY
+        return elements;
     }
 }
