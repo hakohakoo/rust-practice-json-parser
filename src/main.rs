@@ -27,10 +27,13 @@ enum TokenType {
 
 fn main() {
     let mut lex1 = Lexer::new(
-        r#"{"aa1  23wd2": 123, "b": [true, false, null], "c": { "c1": 100, "c2": false }"}"#,
+        r#"{"aa1  23wd2": 123, "b": [true, false, null], "c": { "c1": 100, "c2": false }}"#,
     );
     lex1.generate();
     println!("{:#?}", lex1.token_list);
+    let mut parser = Parser::new(lex1.token_list);
+    parser.generate();
+    println!("{:#?}", parser.ast);
 }
 
 #[derive(Debug)]
@@ -208,6 +211,10 @@ impl Parser {
         }
     }
 
+    fn generate(&mut self) {
+        self.ast = Some(self.parse());
+    }
+
     fn parse(&mut self) -> ASTNode {
         let token = &self.tokens[self.position];
         match token.token_type {
@@ -222,14 +229,7 @@ impl Parser {
             | TokenType::Null
             | TokenType::Number
             | TokenType::String => {
-                return match token.token_type {
-                    TokenType::True => ASTNode::True,
-                    TokenType::False => ASTNode::False,
-                    TokenType::Null => ASTNode::Null,
-                    TokenType::Number => ASTNode::Number(token.value.parse().unwrap()),
-                    TokenType::String => ASTNode::String(token.value.clone()),
-                    _ => unreachable!(),
-                };
+                return self.parse_basic();
             }
             TokenType::CloseArray
             | TokenType::CloseObject
@@ -238,6 +238,20 @@ impl Parser {
                 panic!("Unexpected token: {:?}", token);
             }
         };
+    }
+
+    fn parse_basic(&mut self) -> ASTNode {
+        let token = &self.tokens[self.position];
+        let result = match token.token_type {
+            TokenType::True => ASTNode::True,
+            TokenType::False => ASTNode::False,
+            TokenType::Null => ASTNode::Null,
+            TokenType::Number => ASTNode::Number(token.value.parse().unwrap()),
+            TokenType::String => ASTNode::String(token.value.clone()),
+            _ => panic!("Unexpected token in basic parse: {:?}", token),
+        };
+        self.position += 1;
+        return result;
     }
 
     fn parse_object(&mut self) -> ObjectNode {
@@ -257,13 +271,18 @@ impl Parser {
                     }
                     self.position += 1; // Move to value
                     let value = self.parse();
+                    println!("Value for key {}: {:?}", &key, &value);
                     properties.push((key, value));
-                    self.position += 1; // Move to next token
                     let next_token = &self.tokens[self.position];
-                    if next_token.token_type != TokenType::Comma {
+                    println!("Next token after value: {:?}", next_token);
+                    if next_token.token_type != TokenType::Comma
+                        && next_token.token_type != TokenType::CloseObject
+                    {
                         panic!("Expected COMMA or CLOSE_OBJECT after value in object");
                     }
-                    self.position += 1; // Move to next key or CLOSE_OBJECT
+                    if next_token.token_type == TokenType::Comma {
+                        self.position += 1; // Move to next key
+                    }
                 }
                 _ => panic!("Unexpected token in object: {:?}", current_token),
             }
@@ -284,12 +303,15 @@ impl Parser {
                 _ => {
                     let element = self.parse();
                     elements.push(element);
-                    self.position += 1; // Move to next token
                     let next_token = &self.tokens[self.position];
-                    if next_token.token_type != TokenType::Comma {
+                    if next_token.token_type != TokenType::Comma
+                        && next_token.token_type != TokenType::CloseArray
+                    {
                         panic!("Expected COMMA or CLOSE_ARRAY after element in array");
                     }
-                    self.position += 1; // Move to next element or CLOSE_ARRAY
+                    if next_token.token_type == TokenType::Comma {
+                        self.position += 1; // Move to next element
+                    }
                 }
             }
         }
