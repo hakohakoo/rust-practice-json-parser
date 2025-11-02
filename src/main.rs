@@ -1,3 +1,6 @@
+mod lexer;
+mod lexer2;
+
 const OPEN_OBJECT: &str = "{";
 const CLOSE_OBJECT: &str = "}";
 const OPEN_ARRAY: &str = "[";
