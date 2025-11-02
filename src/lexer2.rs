@@ -41,28 +41,31 @@ mod lexer {
         fn generate(&mut self) {
             let mut iter = self.input.chars().peekable();
 
-            while let Some(current_char) = iter.next() {
+            while let Some(current_char) = iter.peek() {
                 let token = match current_char {
-                    ' ' | '\n' | '\t' | '\r' => continue,
-                    '{' | '}' | '[' | ']' | ':' | ',' => Self::simple_token(current_char),
+                    ' ' | '\n' | '\t' | '\r' => {
+                        iter.next();
+                        continue;
+                    }
+                    '{' | '}' | '[' | ']' | ':' | ',' => Self::parse_simple_token(&mut iter),
                     '"' => Self::parse_string(&mut iter),
-                    '0'..='9' => Self::parse_number(current_char, &mut iter),
-                    'a'..='z' | 'A'..='Z' => Self::parse_keyword(current_char, &mut iter),
+                    '0'..='9' => Self::parse_number(&mut iter),
+                    'a'..='z' | 'A'..='Z' => Self::parse_keyword(&mut iter),
                     _ => panic!("Unexpected character: '{}'", current_char),
                 };
                 self.token_list.push(token);
             }
         }
 
-        fn simple_token(ch: char) -> Token {
-            use TokenType::*;
+        fn parse_simple_token(iter: &mut Peekable<Chars<'_>>) -> Token {
+            let ch = iter.next().unwrap(); // consume the character
             let token_type = match ch {
-                '{' => OpenObject,
-                '}' => CloseObject,
-                '[' => OpenArray,
-                ']' => CloseArray,
-                ':' => Colon,
-                ',' => Comma,
+                '{' => TokenType::OpenObject,
+                '}' => TokenType::CloseObject,
+                '[' => TokenType::OpenArray,
+                ']' => TokenType::CloseArray,
+                ':' => TokenType::Colon,
+                ',' => TokenType::Comma,
                 _ => unreachable!(),
             };
             Token {
@@ -72,6 +75,7 @@ mod lexer {
         }
 
         fn parse_string(iter: &mut Peekable<Chars<'_>>) -> Token {
+            iter.next(); // consume opening quote
             let value: String = iter.peeking_take_while(|&c| c != '"').collect();
             iter.next(); // consume closing quote
             Token {
@@ -80,20 +84,16 @@ mod lexer {
             }
         }
 
-        fn parse_number(first_digit: char, iter: &mut Peekable<Chars<'_>>) -> Token {
-            let number: String = std::iter::once(first_digit)
-                .chain(iter.peeking_take_while(|c| c.is_ascii_digit()))
-                .collect();
+        fn parse_number(iter: &mut Peekable<Chars<'_>>) -> Token {
+            let number: String = iter.peeking_take_while(|c| c.is_ascii_digit()).collect();
             Token {
                 token_type: TokenType::Number,
                 value: number,
             }
         }
 
-        fn parse_keyword(first_char: char, iter: &mut Peekable<Chars<'_>>) -> Token {
-            let keyword: String = std::iter::once(first_char)
-                .chain(iter.peeking_take_while(|c| c.is_alphabetic()))
-                .collect();
+        fn parse_keyword(iter: &mut Peekable<Chars<'_>>) -> Token {
+            let keyword: String = iter.peeking_take_while(|c| c.is_alphabetic()).collect();
 
             let token_type = match keyword.as_str() {
                 "true" => TokenType::True,
