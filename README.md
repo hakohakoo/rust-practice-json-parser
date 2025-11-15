@@ -120,7 +120,7 @@ fn parse(iter: &mut Peekable<Chars>) -> Result<Vec<Token>, String> {
 #### c. 简单符号解析函数 `parse_simple_token`
 
 ```rust
-fn parse_simple_token(iter: &mut Peekable<Chars>) -> Token {
+fn parse_simple_token(iter: &mut Peekable<Chars>) -> Result<Token, String> {
     let character = iter.next().unwrap(); // 消费字符
     let token_type = match character {
         '{' => TokenType::OpenObject,
@@ -129,12 +129,12 @@ fn parse_simple_token(iter: &mut Peekable<Chars>) -> Token {
         ']' => TokenType::CloseArray,
         ':' => TokenType::Colon,
         ',' => TokenType::Comma,
-        _ => unreachable!(),
+        _ => return Err(format!("Unexpected simple token: '{}'", character)),
     };
-    Token {
+    Ok(Token {
         token_type,
         value: character.to_string(),
-    }
+    })
 }
 ```
 
@@ -159,14 +159,14 @@ fn parse_string(iter: &mut Peekable<Chars>) -> Result<Token, String> {
 #### e. 数字解析函数 `parse_number`
 
 ```rust
-fn parse_number(iter: &mut Peekable<Chars>) -> Token {
+fn parse_number(iter: &mut Peekable<Chars>) -> Result<Token, String> {
     let number_str: String = iter
         .peeking_take_while(|c| c.is_digit(10) || *c == '.')
         .collect();
-    Token {
+    Ok(Token {
         token_type: TokenType::Number,
         value: number_str,
-    }
+    })
 }
 ```
 
@@ -263,7 +263,13 @@ fn parse_object(iter: &mut Peekable<Iter<Token>>) -> Result<AstObjectNode, Strin
 
         // 处理键值对之间的分隔符
         match iter.peek().map(|t| t.token_type) {
-            Some(TokenType::Comma) => { iter.next(); }      // 消费逗号，继续下一个键值对
+            Some(TokenType::Comma) => {
+                iter.next(); // 消费逗号
+                // 检查尾随逗号
+                if iter.peek().map(|t| t.token_type) == Some(TokenType::CloseObject) {
+                    return Err("Trailing comma in object".to_string());
+                }
+            }
             Some(TokenType::CloseObject) => break,          // 遇到结束符，准备退出循环
             _ => return Err("Expected ',' or '}' in object".to_string()),
         }
@@ -293,7 +299,13 @@ fn parse_array(iter: &mut Peekable<Iter<Token>>) -> Result<AstArrayNode, String>
 
         // 处理元素之间的分隔符
         match iter.peek().map(|t| t.token_type) {
-            Some(TokenType::Comma) => { iter.next(); }     // 消费逗号，继续下一个元素
+            Some(TokenType::Comma) => {
+                iter.next(); // 消费逗号
+                // 检查尾随逗号
+                if iter.peek().map(|t| t.token_type) == Some(TokenType::CloseArray) {
+                    return Err("Trailing comma in array".to_string());
+                }
+            }
             Some(TokenType::CloseArray) => break,          // 遇到结束符，准备退出循环
             _ => return Err("Expected ',' or ']' in array".to_string()),
         }
