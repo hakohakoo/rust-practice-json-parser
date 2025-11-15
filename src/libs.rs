@@ -178,7 +178,11 @@ pub mod parser {
             // check separator
             match iter.peek().map(|t| t.token_type) {
                 Some(TokenType::Comma) => {
-                    iter.next();
+                    iter.next(); // consume comma
+                    // check for trailing comma
+                    if iter.peek().map(|t| t.token_type) == Some(TokenType::CloseObject) {
+                        return Err("Trailing comma in object".to_string());
+                    }
                 }
                 Some(TokenType::CloseObject) => break,
                 _ => return Err("Expected ',' or '}' in object".to_string()),
@@ -202,6 +206,10 @@ pub mod parser {
             match iter.peek().map(|t| t.token_type) {
                 Some(TokenType::Comma) => {
                     iter.next(); // consume comma
+                    // 检查逗号后面是否紧跟结束符（尾随逗号错误）
+                    if iter.peek().map(|t| t.token_type) == Some(TokenType::CloseArray) {
+                        return Err("Trailing comma in array".to_string());
+                    }
                 }
                 Some(TokenType::CloseArray) => break, // end of array parsing
                 _ => return Err("Expected ',' or ']' in array".to_string()),
