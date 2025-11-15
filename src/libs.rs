@@ -25,121 +25,92 @@ pub mod lexer {
     use std::iter::Peekable;
     use std::str::Chars;
 
-    type LexResult<T> = Result<T, String>;
-
-    #[derive(Debug)]
-    pub struct Lexer<'a> {
-        pub input: Peekable<Chars<'a>>,
-        pub token_list: Option<Vec<Token>>,
+    pub fn generate(input: &str) -> Result<Vec<Token>, String> {
+        parse(&mut input.chars().peekable())
     }
 
-    impl<'a> Lexer<'a> {
-        pub fn new(input: &'a str) -> Self {
-            Lexer {
-                input: input.chars().peekable(),
-                token_list: None,
+    fn parse(iter: &mut Peekable<Chars>) -> Result<Vec<Token>, String> {
+        let mut tokens = Vec::new();
+        while let Some(&c) = iter.peek() {
+            if c.is_whitespace() {
+                iter.next();
+                continue;
             }
+            let token = match c {
+                '{' | '}' | '[' | ']' | ':' | ',' => parse_simple_token(iter)?,
+                '"' => parse_string(iter)?,
+                '0'..='9' => parse_number(iter)?,
+                'a'..='z' | 'A'..='Z' => parse_keyword(iter)?,
+                _ => return Err(format!("Unexpected character: '{}'", c)),
+            };
+            tokens.push(token);
         }
+        Ok(tokens)
+    }
 
-        pub fn generate(&mut self) -> LexResult<()> {
-            self.token_list = Some(self.parse()?);
-            Ok(())
-        }
+    fn parse_simple_token(iter: &mut Peekable<Chars>) -> Result<Token, String> {
+        let character = iter.next().unwrap(); // consume the character
+        let token_type = match character {
+            '{' => TokenType::OpenObject,
+            '}' => TokenType::CloseObject,
+            '[' => TokenType::OpenArray,
+            ']' => TokenType::CloseArray,
+            ':' => TokenType::Colon,
+            ',' => TokenType::Comma,
+            _ => return Err(format!("Unexpected simple token: '{}'", character)),
+        };
+        Ok(Token {
+            token_type,
+            value: character.to_string(),
+        })
+    }
 
-        pub fn parse(&mut self) -> LexResult<Vec<Token>> {
-            let mut token_list = Vec::new();
-            while let Some(&current_char) = self.input.peek() {
-                match current_char {
-                    ' ' | '\n' | '\t' | '\r' => {
-                        self.input.next();
-                        continue;
-                    }
-                    '{' | '}' | '[' | ']' | ':' | ',' => {
-                        let token = self.parse_simple_token();
-                        token_list.push(token);
-                    }
-                    '"' => {
-                        let token = self.parse_string()?;
-                        token_list.push(token);
-                    }
-                    '0'..='9' => {
-                        let token = self.parse_number();
-                        token_list.push(token);
-                    }
-                    'a'..='z' | 'A'..='Z' => {
-                        let token = self.parse_keyword()?;
-                        token_list.push(token);
-                    }
-                    _ => return Err(format!("Unexpected character: '{}'", current_char)),
-                }
-            }
-            Ok(token_list)
-        }
+    fn parse_string(iter: &mut Peekable<Chars>) -> Result<Token, String> {
+        consume_char(iter, '"')?; // consume opening quote
+        let string: String = iter.peeking_take_while(|&c| c != '"').collect();
+        consume_char(iter, '"')?; // consume closing quote
+        Ok(Token {
+            token_type: TokenType::String,
+            value: string,
+        })
+    }
 
-        fn parse_simple_token(&mut self) -> Token {
-            let ch = self.input.next().unwrap(); // consume the character
-            Token {
-                token_type: match ch {
-                    '{' => TokenType::OpenObject,
-                    '}' => TokenType::CloseObject,
-                    '[' => TokenType::OpenArray,
-                    ']' => TokenType::CloseArray,
-                    ':' => TokenType::Colon,
-                    ',' => TokenType::Comma,
-                    _ => unreachable!(),
-                },
-                value: ch.to_string(),
-            }
-        }
+    fn parse_number(iter: &mut Peekable<Chars>) -> Result<Token, String> {
+        let number_str: String = iter
+            .peeking_take_while(|c| c.is_digit(10) || *c == '.')
+            .collect();
+        Ok(Token {
+            token_type: TokenType::Number,
+            value: number_str,
+        })
+    }
 
-        fn parse_string(&mut self) -> LexResult<Token> {
-            self.consume_char('"')?; // consume opening quote
-            let value: String = self.input.peeking_take_while(|&c| c != '"').collect();
-            self.consume_char('"')?; // consume closing quote
-            Ok(Token {
-                token_type: TokenType::String,
-                value,
-            })
-        }
+    fn parse_keyword(iter: &mut Peekable<Chars>) -> Result<Token, String> {
+        let keyword: String = iter.peeking_take_while(|c| c.is_alphabetic()).collect();
+        let token_type = match keyword.as_str() {
+            "true" => TokenType::True,
+            "false" => TokenType::False,
+            "null" => TokenType::Null,
+            _ => return Err(format!("Unexpected keyword: '{}'", keyword)),
+        };
+        Ok(Token {
+            token_type,
+            value: keyword,
+        })
+    }
 
-        fn parse_number(&mut self) -> Token {
-            Token {
-                token_type: TokenType::Number,
-                value: self
-                    .input
-                    .peeking_take_while(|c| c.is_ascii_digit())
-                    .collect(),
-            }
-        }
-
-        fn parse_keyword(&mut self) -> LexResult<Token> {
-            let keyword: String = self
-                .input
-                .peeking_take_while(|c| c.is_alphabetic())
-                .collect();
-            Ok(Token {
-                token_type: match keyword.as_str() {
-                    "true" => TokenType::True,
-                    "false" => TokenType::False,
-                    "null" => TokenType::Null,
-                    _ => return Err(format!("Unknown keyword: {}", keyword)),
-                },
-                value: keyword,
-            })
-        }
-
-        fn consume_char(&mut self, expected: char) -> LexResult<char> {
-            match self.input.next() {
-                Some(c) if c == expected => Ok(c),
-                Some(c) => Err(format!("Expected '{}', but found '{}'", expected, c)),
-                None => return Err("Unexpected end of input".to_string()),
-            }
+    fn consume_char(iter: &mut Peekable<Chars>, expected: char) -> Result<char, String> {
+        match iter.next() {
+            Some(c) if c == expected => Ok(c),
+            Some(c) => Err(format!("Expected '{}', but found '{}'", expected, c)),
+            None => Err("Unexpected end of input".to_string()),
         }
     }
 }
 
 #[derive(Debug)]
-enum ASTNode {
+#[allow(dead_code)]
+pub enum ASTNode {
     Object(AstObjectNode),
     Array(AstArrayNode),
     String(String),
@@ -149,145 +120,110 @@ enum ASTNode {
     Null,
 }
 
-type AstObjectNode = Vec<(String, ASTNode)>;
+pub type AstObjectNode = Vec<(String, ASTNode)>;
 
-type AstArrayNode = Vec<ASTNode>;
+pub type AstArrayNode = Vec<ASTNode>;
 
 pub mod parser {
     use super::{ASTNode, AstArrayNode, AstObjectNode, Token, TokenType};
     use std::iter::Peekable;
     use std::slice::Iter;
 
-    type ParseResult<T> = Result<T, String>;
-
-    #[derive(Debug)]
-    pub struct Parser<'a> {
-        tokens: Peekable<Iter<'a, Token>>,
-        ast: Option<ASTNode>,
+    pub fn generate(tokens: &[Token]) -> Result<ASTNode, String> {
+        parse(&mut tokens.iter().peekable())
     }
 
-    impl<'a> Parser<'a> {
-        pub fn new(tokens: &'a [Token]) -> Self {
-            Parser {
-                tokens: tokens.iter().peekable(),
-                ast: None,
+    fn parse(iter: &mut Peekable<Iter<Token>>) -> Result<ASTNode, String> {
+        let token = iter.peek().ok_or("Unexpected end of input")?;
+        match token.token_type {
+            TokenType::OpenObject => Ok(ASTNode::Object(parse_object(iter)?)),
+            TokenType::OpenArray => Ok(ASTNode::Array(parse_array(iter)?)),
+            TokenType::True
+            | TokenType::False
+            | TokenType::Null
+            | TokenType::Number
+            | TokenType::String => parse_basic(iter),
+            _ => Err("Invalid JSON token".to_string()),
+        }
+    }
+
+    fn parse_basic(iter: &mut Peekable<Iter<Token>>) -> Result<ASTNode, String> {
+        let token = iter.next().ok_or("Unexpected end of input")?;
+        match token.token_type {
+            TokenType::True => Ok(ASTNode::True),
+            TokenType::False => Ok(ASTNode::False),
+            TokenType::Null => Ok(ASTNode::Null),
+            TokenType::Number => {
+                let number = token.value.parse::<f64>().map_err(|_| "Invalid number")?;
+                Ok(ASTNode::Number(number))
             }
+            TokenType::String => Ok(ASTNode::String(token.value.clone())),
+            _ => Err("Invalid token".to_string()),
         }
+    }
 
-        pub fn generate(&mut self) -> ParseResult<()> {
-            self.ast = Some(self.parse()?);
-            Ok(())
-        }
-
-        fn parse(&mut self) -> ParseResult<ASTNode> {
-            let token = self.tokens.peek().ok_or("Unexpected end of input")?;
-            match token.token_type {
-                TokenType::OpenObject => Ok(ASTNode::Object(self.parse_object()?)),
-                TokenType::OpenArray => Ok(ASTNode::Array(self.parse_array()?)),
-                TokenType::True
-                | TokenType::False
-                | TokenType::Null
-                | TokenType::Number
-                | TokenType::String => self.parse_basic(),
-                _ => Err("Invalid JSON token".to_string()),
+    fn parse_object(iter: &mut Peekable<Iter<Token>>) -> Result<AstObjectNode, String> {
+        consume_token(iter, TokenType::OpenObject)?;
+        let mut properties = Vec::new();
+        while let Some(token) = iter.peek() {
+            if token.token_type == TokenType::CloseObject {
+                break;
             }
-        }
+            // resolve "key": value
+            let key = consume_string(iter)?;
+            consume_token(iter, TokenType::Colon)?;
+            let value = parse(iter)?;
+            properties.push((key, value));
 
-        fn parse_basic(&mut self) -> ParseResult<ASTNode> {
-            let token = self.tokens.next().ok_or("Unexpected end of input")?;
-            match token.token_type {
-                TokenType::True => Ok(ASTNode::True),
-                TokenType::False => Ok(ASTNode::False),
-                TokenType::Null => Ok(ASTNode::Null),
-                TokenType::Number => {
-                    let number = token.value.parse::<f64>().map_err(|_| "Invalid number")?;
-                    Ok(ASTNode::Number(number))
+            // check separator
+            match iter.peek().map(|t| t.token_type) {
+                Some(TokenType::Comma) => {
+                    iter.next();
                 }
-                TokenType::String => Ok(ASTNode::String(token.value.clone())),
-                _ => Err("Invalid token".to_string()),
+                Some(TokenType::CloseObject) => break,
+                _ => return Err("Expected ',' or '}' in object".to_string()),
             }
         }
+        consume_token(iter, TokenType::CloseObject)?;
+        Ok(properties)
+    }
 
-        fn parse_object(&mut self) -> ParseResult<AstObjectNode> {
-            self.consume_token(TokenType::OpenObject)?;
+    fn parse_array(iter: &mut Peekable<Iter<Token>>) -> Result<AstArrayNode, String> {
+        consume_token(iter, TokenType::OpenArray)?;
+        let mut elements = Vec::new();
 
-            let mut properties = Vec::new();
-
-            if !matches!(self.tokens.peek(), Some(t) if t.token_type == TokenType::CloseObject) {
-                while !matches!(self.tokens.peek(), Some(t) if t.token_type == TokenType::CloseObject)
-                {
-                    // 解析 "key": value
-                    let key = self.consume_string()?;
-                    self.consume_token(TokenType::Colon)?;
-                    let value = self.parse()?;
-                    properties.push((key, value));
-
-                    // 检查分隔符
-                    match self.tokens.peek().map(|t| t.token_type) {
-                        Some(TokenType::Comma) => {
-                            self.tokens.next();
-                        }
-                        Some(TokenType::CloseObject) => break,
-                        _ => return Err("Expected ',' or '}' in object".to_string()),
-                    }
+        while let Some(token) = iter.peek() {
+            if token.token_type == TokenType::CloseArray {
+                break;
+            }
+            let element = parse(iter)?;
+            elements.push(element);
+            // handle separator
+            match iter.peek().map(|t| t.token_type) {
+                Some(TokenType::Comma) => {
+                    iter.next(); // consume comma
                 }
-            }
-
-            self.consume_token(TokenType::CloseObject)?;
-            Ok(properties)
-        }
-
-        fn parse_array(&mut self) -> ParseResult<AstArrayNode> {
-            self.consume_token(TokenType::OpenArray)?;
-
-            // 处理空数组
-            if self
-                .tokens
-                .peek()
-                .map(|token| token.token_type == TokenType::CloseArray)
-                .unwrap_or(false)
-            {
-                self.consume_token(TokenType::CloseArray)?;
-                return Ok(Vec::new());
-            }
-
-            let mut elements = Vec::new();
-
-            loop {
-                // 解析数组元素
-                let element = self.parse()?;
-                elements.push(element);
-
-                // 处理分隔符（内联handle_separator的逻辑）
-                let token = self.tokens.peek().ok_or("Unexpected end of input")?;
-                match token.token_type {
-                    TokenType::Comma => {
-                        self.tokens.next(); // 消费逗号
-                        continue; // 继续解析下一个元素
-                    }
-                    TokenType::CloseArray => break, // 结束数组解析
-                    _ => return Err("Invalid separator".to_string()),
-                }
-            }
-
-            self.consume_token(TokenType::CloseArray)?;
-            Ok(elements)
-        }
-
-        fn consume_string(&mut self) -> ParseResult<String> {
-            match self.tokens.next() {
-                Some(token) if token.token_type == TokenType::String => Ok(token.value.clone()),
-                Some(_) => Err("Expected string".to_string()),
-                None => Err("Unexpected end of input".to_string()),
+                Some(TokenType::CloseArray) => break, // end of array parsing
+                _ => return Err("Expected ',' or ']' in array".to_string()),
             }
         }
+        consume_token(iter, TokenType::CloseArray)?;
+        Ok(elements)
+    }
 
-        fn consume_token(&mut self, expected: TokenType) -> ParseResult<()> {
-            match self.tokens.next() {
-                Some(token) if token.token_type == expected => Ok(()),
-                Some(_) => Err(format!("Expected {:?}, found unexpected token", expected)),
-                None => Err("Unexpected end of input".to_string()),
-            }
+    fn consume_string(iter: &mut Peekable<Iter<Token>>) -> Result<String, String> {
+        match iter.next() {
+            Some(token) if token.token_type == TokenType::String => Ok(token.value.clone()),
+            Some(_) => Err("Expected string".to_string()),
+            None => Err("Unexpected end of input".to_string()),
+        }
+    }
+
+    fn consume_token(iter: &mut Peekable<Iter<Token>>, expected: TokenType) -> Result<(), String> {
+        match iter.next() {
+            Some(token) if token.token_type == expected => Ok(()),
+            Some(_) => Err(format!("Expected {:?}, found unexpected token", expected)),
+            None => Err("Unexpected end of input".to_string()),
         }
     }
 }
