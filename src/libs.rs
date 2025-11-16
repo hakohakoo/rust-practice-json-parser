@@ -206,7 +206,7 @@ pub mod parser {
             match iter.peek().map(|t| t.token_type) {
                 Some(TokenType::Comma) => {
                     iter.next(); // consume comma
-                    // 检查逗号后面是否紧跟结束符（尾随逗号错误）
+                    // check for trailing comma
                     if iter.peek().map(|t| t.token_type) == Some(TokenType::CloseArray) {
                         return Err("Trailing comma in array".to_string());
                     }
