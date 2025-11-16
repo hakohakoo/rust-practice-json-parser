@@ -1,6 +1,20 @@
-## 1. 基础概念
+## 1. 项目说明
 
-### 1.1 什么是 Lexer（词法分析器）？
+本项目实现了一个简陋的 RUST 版的 JSON Lexer 和 Parser，最终输出 AST 抽象树：
+
+```
+JSON 字符串 → Lexer → Token 流 → Parser → AST 树
+```
+
+## 2. 运行测试
+
+```bash
+cargo run
+```
+
+## 3. 相关概念
+
+### 3.1 什么是 Lexer（词法分析器）？
 
 **Lexer** 是编译器的第一阶段，负责将原始的字符流转换为有意义的词法单元（Token）。它需要读取输入字符串，识别出各种符号、关键字、数字等，然后将识别出的字符序列分类为不同类型的 Token，同时过滤掉空白字符、注释等无关内容。
 
@@ -12,15 +26,15 @@
 -   `"John"` → String Token (value: "John")
 -   `}` → CloseObject Token
 
-### 1.2 什么是 Token 流？
+### 3.2 什么是 Token 流？
 
 **Token 流** 是 Lexer 的输出，Parser 的输入。它是一个 Token 序列，每个 Token 包含类型信息（这是什么类型的 Token，如字符串、数字、符号等）和值信息（Token 的具体内容）。
 
-### 1.3 什么是 Parser（语法分析器）？
+### 3.3 什么是 Parser（语法分析器）？
 
 **Parser** 接收 Token 流，根据语法规则构建抽象语法树（AST）。它需要检查 Token 序列是否符合 JSON 语法规则，识别出对象、数组、键值对等结构关系，并将扁平的 Token 流转换为层次化的 AST。
 
-### 1.4 完整流程示例
+### 3.4 完整流程示例
 
 **输入 JSON**：`{"age": 25}`
 
@@ -40,17 +54,9 @@ Token流: [OpenObject, String("age"), Colon, Number("25"), CloseObject]
 AST树: Object([("age", Number(25.0))])
 ```
 
-## 2. 项目概览
+## 4. 核心组件
 
-本项目实现了一个简陋的 RUST 版的 JSON 解析流：
-
-```
-JSON 字符串 → Lexer → Token 流 → Parser → AST 树
-```
-
-## 3. 核心组件
-
-### 3.1 Token 定义
+### 4.1 Token 定义
 
 首先，需要分析 JSON 格式包含哪些基本元素。JSON 语法包含结构符号（`{` `}` `[` `]`）用于定义对象和数组的边界，分隔符号（`:` `,`）用于分离键值对和元素，以及各种数据类型如字符串、数字、布尔值、null，还有三个特殊的字面量关键字 `true` `false` `null`。
 
@@ -79,7 +85,7 @@ pub struct Token {
 
 **Token 结构体中 value 字段的作用：** 因为字符串和数字需要保留具体的值信息，同时这也便于错误报告和调试输出。
 
-### 3.2 Lexer
+### 4.2 Lexer
 
 #### a. 主入口函数 `generate`
 
@@ -192,7 +198,7 @@ fn parse_keyword(iter: &mut Peekable<Chars>) -> Result<Token, String> {
 
 处理 JSON 关键字（true、false、null）的解析。收集连续的字母字符，然后匹配已知的关键字，如果不匹配则返回错误。
 
-### 3.3 AST 定义
+### 4.3 AST 定义
 
 JSON 支持六种数据类型：对象（键值对的无序集合，如 `{"key": value}`）、数组（值的有序列表，如 `[value1, value2]`）、字符串（双引号包围的文本，如 `"hello"`）、数字（整数或浮点数，如 `42`, `3.14`）、布尔值（`true` 或 `false`）以及空值（`null`）。
 
@@ -214,7 +220,7 @@ pub type AstObjectNode = Vec<(String, ASTNode)>;
 pub type AstArrayNode = Vec<ASTNode>;
 ```
 
-### 3.4 Parser
+### 4.4 Parser
 
 #### a. 主入口函数 `generate`
 
@@ -338,9 +344,3 @@ fn parse_basic(iter: &mut Peekable<Iter<Token>>) -> Result<ASTNode, String> {
 ```
 
 处理 JSON 的叶子节点（基本数据类型）。注意这里使用 `next()` 而不是 `peek()`，因为需要消费 Token。对于数字类型需要进行字符串到浮点数的转换，可能产生解析错误。
-
-## 4. 运行和测试
-
-```bash
-cargo run
-```
